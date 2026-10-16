@@ -1,0 +1,6 @@
+.env
+node_modules/
+ba-chat-ui/
+*.js.map
+*.d.ts
+*.d.ts.map
