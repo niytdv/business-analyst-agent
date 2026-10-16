@@ -1,12 +1,17 @@
 import "dotenv/config";
+import express from "express";
+import cors from "cors";
+import path from "path";
+import { fileURLToPath } from "url";
 import { groq } from "@ai-sdk/groq";
 import { streamText } from "ai";
-import * as readline from "readline";
 
-type Message = {
-  role: "user" | "assistant";
-  content: string;
-};
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+app.use(express.static(path.join(__dirname, "public")));
 
 const SYSTEM_PROMPT = `You are an expert Business Analyst with 15+ years of experience across multiple industries.
 You help users with:
@@ -21,65 +26,38 @@ Be concise but thorough. Ask clarifying questions when requirements are ambiguou
 Use business analysis frameworks and best practices in your responses.
 Format your responses clearly using bullet points, numbered lists, or sections where appropriate.`;
 
-const history: Message[] = [];
+app.post("/api/chat", async (req, res) => {
+  const { messages } = req.body;
 
-const rl = readline.createInterface({
-  input: process.stdin,
-  output: process.stdout,
-});
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
 
-function ask(question: string): Promise<string> {
-  return new Promise((resolve) => {
-    rl.question(question, (answer) => {
-      resolve(answer);
+  try {
+    const result = streamText({
+      model: groq("qwen/qwen3.8-27b"),
+      system: SYSTEM_PROMPT,
+      messages,
     });
-  });
-}
 
-async function chat(userMessage: string): Promise<void> {
-  history.push({ role: "user", content: userMessage });
-
-  process.stdout.write("\n\x1b[36mAssistant:\x1b[0m ");
-
-  let fullResponse = "";
-
-  const { textStream } = streamText({
-    model: groq("qwen/qwen3.8-27b"),
-    system: SYSTEM_PROMPT,
-    messages: history,
-  });
-
-  for await (const chunk of textStream) {
-    process.stdout.write(chunk);
-    fullResponse += chunk;
-  }
-
-  process.stdout.write("\n\n");
-
-  history.push({ role: "assistant", content: fullResponse });
-}
-
-async function main() {
-  console.log("\x1b[1m\x1b[35m╔════════════════════════════════════════╗\x1b[0m");
-  console.log("\x1b[1m\x1b[35m║      Business Analyst AI Assistant     ║\x1b[0m");
-  console.log("\x1b[1m\x1b[35m╚════════════════════════════════════════╝\x1b[0m");
-  console.log('\x1b[90mType your message and press Enter to chat.');
-  console.log('Type "exit" or "quit" to end the session.\x1b[0m\n');
-
-  while (true) {
-    const input = await ask("\x1b[32mYou:\x1b[0m ");
-    const trimmed = input.trim();
-
-    if (!trimmed) continue;
-
-    if (trimmed.toLowerCase() === "exit" || trimmed.toLowerCase() === "quit") {
-      console.log("\n\x1b[90mEnding session. Goodbye!\x1b[0m");
-      rl.close();
-      break;
+    for await (const chunk of result.textStream) {
+      res.write(`data: ${JSON.stringify({ text: chunk })}\n\n`);
     }
 
-    await chat(trimmed);
+    res.write("data: [DONE]\n\n");
+    res.end();
+  } catch (err) {
+    console.error(err);
+    res.write(`data: ${JSON.stringify({ error: "Something went wrong" })}\n\n`);
+    res.end();
   }
-}
+});
 
-main().catch(console.error);
+const PORT = process.env.PORT ?? 3000;
+app.listen(PORT, () => {
+  console.log(`\x1b[1m\x1b[35m╔════════════════════════════════════════╗\x1b[0m`);
+  console.log(`\x1b[1m\x1b[35m║      Business Analyst AI Assistant     ║\x1b[0m`);
+  console.log(`\x1b[1m\x1b[35m╚════════════════════════════════════════╝\x1b[0m`);
+  console.log(`\x1b[32m✓\x1b[0m Server running at \x1b[36mhttp://localhost:${PORT}\x1b[0m`);
+  console.log(`\x1b[90m  Open the URL above in your browser to start chatting.\x1b[0m\n`);
+});
