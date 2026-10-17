@@ -1,6 +1,7 @@
 .env
 node_modules/
 ba-chat-ui/
+artifacts/
+.vscode/
 *.js.map
-*.d.ts
 *.d.ts.map
